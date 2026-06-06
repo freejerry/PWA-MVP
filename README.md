@@ -24,17 +24,21 @@ append-only + tombstone，依 `id` 取聯集、`deleted` 勝出 → 天然無衝
 要在手機驗證需要兩個東西:**前端網址**(離線/安裝/OPFS 等大部分驗收只需要它)與
 **同步後端網址**(只有跨裝置同步需要)。
 
-### A. 前端 — 已自動部署(零設定)
-本 repo 內含 GitHub Actions(`.github/workflows/deploy-pages.yml`),push 後會自動把網站部署到
-**GitHub Pages** 並開啟 Pages,跑完即得一個 HTTPS 網址:
+### A. 前端 — 一次性開啟 Pages,之後每次 push 自動部署
+本 repo 內含 GitHub Actions(`.github/workflows/deploy-pages.yml`),會自動 build & deploy。
+但 **GitHub Pages 第一次必須由你手動開啟**(預設的 workflow token 沒有權限替你建立 Pages 站台,
+這是 GitHub 的限制,我無法代做):
 
-```
-https://<你的帳號>.github.io/<repo 名>/
-```
+1. GitHub repo → **Settings → Pages**。
+2. **Build and deployment → Source** 選 **GitHub Actions**。
+3. 回到 **Actions** 分頁 → 左側 "Deploy PWA to GitHub Pages" → 右上 **Run workflow**(或隨便再 push 一次)。
+4. 跑完後,網址在該次 run 的 `deploy` job 摘要、或 **Settings → Pages** 頂端:
+   ```
+   https://<你的帳號>.github.io/<repo 名>/
+   ```
 
-> 查網址:GitHub repo → **Actions** 分頁看 "Deploy PWA to GitHub Pages" 跑完,
-> 或 **Settings → Pages** 上方顯示的網址。第一次若因權限沒自動開,到
-> **Settings → Pages → Source** 選 **GitHub Actions** 再重跑一次工作流程即可。
+> 開啟前工作流程會以 `Create Pages site failed: Resource not accessible by integration` 失敗 —— 這是預期的,
+> 開啟 Source=GitHub Actions 後重跑就會綠燈。之後每次 push 到 `main` 或本功能分支都會自動重新部署。
 
 拿到網址後,**只用前端**就能驗收:安裝/standalone、離線冷啟動、OPFS 持久化、persist()/estimate()。
 這些不需要後端。
