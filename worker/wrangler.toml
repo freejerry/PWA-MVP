@@ -1,0 +1,16 @@
+# Cloudflare Worker 設定（同步後端）
+#
+# 部署步驟見本資料夾的 README，或專案根目錄 README 的「同步後端部署」章節。
+# 重點：建立一個 KV namespace，並把它的 id 填到下面的 binding。
+
+name = "notes-poc-sync"
+main = "index.js"
+compatibility_date = "2024-11-01"
+
+# KV namespace 綁定。請先執行：
+#   npx wrangler kv namespace create NOTES
+# 把產生的 id 填到下面（preview_id 可選，給 `wrangler dev` 用）。
+[[kv_namespaces]]
+binding = "NOTES"
+id = "<在此填入 wrangler 產生的 KV namespace id>"
+# preview_id = "<選填：wrangler dev 用的 preview id>"

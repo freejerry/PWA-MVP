@@ -5,11 +5,56 @@
 **自動 fallback 到 IndexedDB**；同時把 `navigator.storage` 的
 `persist() / persisted() / estimate()` 行為攤開來實測。
 
+**本階段以 iOS 為主，並加入跨裝置資料同步**：因為 PoC 第一階段已指出 iOS 最大風險是
+**7 天驅逐 + persist() 多半不授予**，所以把本地 storage 降級為「快取」，真相來源放到一個
+**Cloudflare Worker + KV** 的極簡後端。同步採 **vanilla union-merge**（不引入函式庫）：記事為
+append-only + tombstone，依 `id` 取聯集、`deleted` 勝出 → 天然無衝突。識別方式為使用者自填的
+**同步碼**，並在新增/刪除、開啟、回到前景、上線時**自動同步**。
+
 > ⚠️ **誠實聲明**：本專案在一個沒有實體行動裝置與瀏覽器的環境中產出。
 > 所有「程式碼層面」的正確性我已做靜態檢查（見最後），但下方驗收表中標記
 > **「待裝置實測」** 的項目，我**沒有**在真實 iOS / Android 上跑過。
 > 表內「預期」欄是依據各平台已知行為（知識截止 2026-01）所做的推測，
 > 你必須在真機上勾選確認，尤其是 **iOS 的 7 天驅逐** 這種需要等時間才能觀察的項目。
+
+---
+
+## 0. 在裝置上驗證（最短路徑）
+
+要在手機驗證需要兩個東西:**前端網址**(離線/安裝/OPFS 等大部分驗收只需要它)與
+**同步後端網址**(只有跨裝置同步需要)。
+
+### A. 前端 — 開啟 GitHub Pages(一次性,~30 秒)
+GitHub Pages 必須由你在設定頁開一次(這是帳號層級動作,API token 無權代開)。
+對這個純靜態站,**最簡單可靠**的是「從分支部署」,完全不需要 GitHub Actions:
+
+1. GitHub repo → **Settings → Pages**。
+2. **Build and deployment → Source** 選 **Deploy from a branch**。
+3. **Branch** 選 `claude/pwa-offline-persistence-poc-zo10I`(要驗含同步的版本)或合併後選 `main`;
+   資料夾選 **`/ (root)`** → **Save**。
+4. 等約 1 分鐘,網址在 **Settings → Pages** 頂端出現:
+   ```
+   https://<你的帳號>.github.io/<repo 名>/        例:https://freejerry.github.io/PWA-MVP/
+   ```
+
+> repo 內已放 `.nojekyll`,確保檔案原樣 serve(不經 Jekyll 處理)。
+>
+> **替代方案(GitHub Actions 部署)**:若你偏好 Source = **GitHub Actions**,先在 Settings → Pages 把
+> Source 設為 GitHub Actions,再到 **Actions** 分頁手動跑 "Deploy PWA to GitHub Pages"
+> (該工作流程預設只手動觸發,避免未設定前一直紅燈)。兩種擇一即可。
+
+拿到網址後,**只用前端**就能驗收:安裝/standalone、離線冷啟動、OPFS 持久化、persist()/estimate()。
+這些不需要後端。
+
+### B. 同步後端 — 需要你的 Cloudflare 帳號(我無法代為部署)
+跨裝置同步那一項才需要。最快方式:
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/freejerry/pwa-mvp/tree/main/worker)
+
+或用指令(見 §3.1b)。部署完把得到的 `https://….workers.dev/notes` 填進前端「跨裝置同步」面板即可。
+
+> 為什麼後端不能自動好?Cloudflare Worker 需要你的帳號授權(`wrangler login` / 一鍵按鈕的 OAuth),
+> 這是必要的人工步驟,無法在這個環境替你完成。前端則完全自動。
 
 ---
 
@@ -27,6 +72,11 @@
 │   ├── icon-512.png
 │   ├── maskable-512.png
 │   └── gen_icons.py    # 產生上面 PNG 的腳本（部署不需要）
+├── worker/             # 同步後端（Cloudflare Worker，與前端分開部署）
+│   ├── index.js        # GET/POST /notes，伺服器端 union-merge，KV 儲存，CORS
+│   └── wrangler.toml   # Worker 設定 + KV namespace 綁定
+├── .github/workflows/
+│   └── deploy-pages.yml # push 後自動部署前端到 GitHub Pages（取得可在手機開的 HTTPS 網址）
 └── README.md
 ```
 
@@ -62,6 +112,27 @@
 - iOS 另外靠 `index.html` 的 `apple-mobile-web-app-capable` / `apple-mobile-web-app-status-bar-style`
   / `apple-touch-icon` 才能以 standalone 隱藏網址列。
 
+### 2.5 跨裝置同步（本階段新增，以 iOS 為主）
+**動機**：iOS 上本地 storage 不可靠（7 天驅逐 / persist 多半不授予），所以本地只當快取，
+真相來源放 Cloudflare Worker + KV。
+
+- **資料模型**：每筆記事 `{ id, text, ts, updated, deleted }`。append-only；刪除用
+  `deleted:true` 的 **tombstone**（這樣刪除也能跨裝置傳遞）。UI 過濾掉 tombstone。
+- **同步演算法（vanilla union-merge，無函式庫）**：一次 `POST /notes?code=XXX` 同時做
+  push + pull——本機把整份資料送上去，**伺服器端也做 union-merge** 後回傳完整集合，前端再寫回本機。
+  合併規則：依 `id` 取聯集、`deleted` 勝出、`updated` 取較新、`text/ts` 不可變取最早出現者。
+  → append-only + 聯集 = **天然無衝突**，連 CRDT 都不需要。
+- **冪等性**：合併已收斂後再合併不會再變（見「靜態檢查」的 fixpoint 單元測試），
+  所以 `syncNow()` 只在內容真的不同時才寫回本機，不會無謂 I/O。
+- **識別與觸發**：使用者自填**同步碼**（存在 `localStorage`）；啟用後在
+  **新增 / 刪除 / 開機 / `visibilitychange` 回前景 / `pageshow` / `online`** 時自動同步
+  （回前景觸發對 iOS standalone 特別重要，因為 app 會被凍結）。連續輸入有 800ms debounce。
+- **離線**：離線時 `syncNow()` 直接標記「已排入待同步」，等 `online` 事件再補同步；本地 OPFS/IDB
+  照常可讀寫，完全不阻塞。
+- **Service Worker**：跨來源（打到 Worker）的請求一律 **網路直通、不進快取**，避免拿到舊資料。
+- **安全性（PoC 等級，務必知道）**：同步碼即存取權，**知道碼的人就能讀寫該組資料**，且 KV 內為明文。
+  正式環境應換成真正的帳號 / 權杖 + 後端授權。
+
 ---
 
 ## 3. 部署到 GitHub Pages 並在手機上測試
@@ -80,6 +151,30 @@ PWA 需要 **HTTPS**（`localhost` 例外）。GitHub Pages 免費提供 HTTPS�
 
 > Cloudflare Pages 也可：connect repo、build command 留空、output 目錄填 `/`（純靜態，免建置）。
 
+### 3.1b 部署同步後端（Cloudflare Worker + KV，免費、免信用卡即可起步）
+前端是靜態檔（GitHub Pages），同步後端是一個獨立的 Cloudflare Worker。步驟：
+
+```bash
+# 1. 安裝並登入（會開瀏覽器授權）
+npm i -g wrangler
+wrangler login
+
+# 2. 建立 KV namespace，記下回傳的 id
+cd worker
+wrangler kv namespace create NOTES
+#   → 把輸出的 id 填進 worker/wrangler.toml 的 [[kv_namespaces]] id
+
+# 3. 部署
+wrangler deploy
+#   → 會得到網址，例如 https://notes-poc-sync.<你的帳號>.workers.dev
+```
+
+部署後，前端「跨裝置同步」面板的 **同步 API 網址** 填：
+`https://notes-poc-sync.<你的帳號>.workers.dev/notes`（**記得結尾的 `/notes`**）。
+
+> 本機開發測試後端：`cd worker && wrangler dev`（需在 wrangler.toml 補 `preview_id`）。
+> CORS 已設 `*`，所以 GitHub Pages 網域可直接呼叫。
+
 ### 3.2 在手機上測試
 **Android（Chrome）**
 1. 用 Chrome 開上面的 https 網址。
@@ -89,13 +184,20 @@ PWA 需要 **HTTPS**（`localhost` 例外）。GitHub Pages 免費提供 HTTPS�
 5. 新增幾筆記事 → 從最近 app 列表**完全關閉** → 重開 → 記事應仍在。
 6. 狀態面板按「請求持久化」，記錄 `persist()` 結果與 `persisted()`。
 
-**iOS（Safari）**
+**iOS（Safari）— 本階段重點**
 1. 用 **Safari**（不是其他瀏覽器）開該 https 網址。
 2. 分享鈕 →「**加入主畫面**」→ 確認 icon / 名稱 → 加入。
 3. 從主畫面圖示開啟 → 應為 standalone（無網址列）。
 4. 飛航模式冷啟動測試、新增→完全關閉→重開測試，同上。
-5. **驅逐測試**：記錄今天日期，之後**不要開這個網站**，過 7 天以上再開主畫面 app，
-   看記事是否還在（這是 iOS 最大的風險點，必須等時間驗證）。
+5. **同步測試**（建議第二台裝置或桌機 Chrome 對照）：
+   - 在「跨裝置同步」面板填 Worker 網址 + 一組同步碼，按「啟用自動同步」→ 狀態應變「已同步」、顯示 rev。
+   - A 裝置新增記事 → B 裝置（填同一同步碼）開啟或切回前景 → 應自動 pull 到那筆。
+   - A 刪除某筆（tombstone）→ B 回前景 → 該筆也消失。
+   - 離線時新增 → 狀態顯示「已排入待同步」→ 恢復連線後應自動補同步。
+6. **驅逐測試（最關鍵）**：記錄今天日期，之後**不要開這個網站**，過 7 天以上再開主畫面 app：
+   - 看本地記事是否被清掉（驗證 iOS 7 天驅逐是否真的發生在 standalone app）。
+   - 若被清掉但**同步已啟用** → 回前景時應從 Worker 自動 pull 回來，**資料不會真的遺失**
+     （這正是本階段加同步要解決的核心問題）。
 
 ### 3.3 本機快速測試（選用）
 ```bash
@@ -121,6 +223,10 @@ Chrome DevTools → Application 分頁可檢視 Manifest、Service Workers、Sto
 | 新增記事後，完全關閉 app 再重開，記事仍在 | [ ] 待測 | [ ] 待測 | 短期內兩者預期可。iOS 長期受 7 天驅逐影響（見下） |
 | `persist()` 回傳結果與 `persisted()` 狀態 | [ ] 待測 | [ ] 待測 | Android：安裝後/高互動常為 `true`。iOS：常為 `false`（見下） |
 | `estimate()` 的 usage/quota 能正確顯示 | [ ] 待測 | [ ] 待測 | 兩者預期可顯示數值；iOS quota 通常較保守 |
+| 啟用同步後，A 新增 → B 自動 pull 到 | [ ] 待測 | [ ] 待測 | 回前景/開機/上線觸發；union-merge 已過 fixpoint 單元測試 |
+| A 刪除（tombstone）→ B 也消失 | [ ] 待測 | [ ] 待測 | 刪除以 `deleted:true` 傳遞，`deleted` 在合併時勝出 |
+| 離線新增 → 恢復連線後自動補同步 | [ ] 待測 | [ ] 待測 | 離線時排隊，`online` 事件觸發 |
+| **iOS 7 天驅逐後，同步能把資料救回** | （N/A） | [ ] **待 7 天實測** | 本階段加同步的主要目的；需等時間驗證 |
 
 填寫範例（請替換成你的真機結果）：
 
@@ -164,34 +270,51 @@ Chrome DevTools → Application 分頁可檢視 Manifest、Service Workers、Sto
   **約 7 天未與該網站互動就清除** 的政策（針對一般 Safari 瀏覽情境）。
 - 加到主畫面的 web app 是否套用同一條 7 天規則、或有不同範疇，各 iOS 版本行為不一致，
   **這是本 PoC 最大的不確定點**，必須用「3.2 步驟 5」等 7 天以上實測。
-- 因此結論層面：**不要把 iOS 上的 OPFS/IndexedDB 當成可靠長期保存**；
-  真要長期保存應考慮可同步到後端、或引導使用者匯出。
+- 因此結論層面：**不要把 iOS 上的 OPFS/IndexedDB 當成可靠長期保存**——
+  這就是本階段加上「Cloudflare Worker + KV 同步」的直接理由：本地當快取，後端當真相來源。
+
+### 5.4 同步在 iOS 上的注意點（待真機覆核）
+- iOS standalone app 會被系統凍結；回前景時的 `visibilitychange` / `pageshow` 是最可靠的
+  自動 pull 時機，本 PoC 已掛上。需實測 iOS 是否確實在 resume 時觸發這些事件。
+- 跨來源 `fetch` 在 iOS standalone 下需 Worker 正確回 CORS（已設 `*`）。若 pull 失敗，
+  事件記錄會顯示 `同步失敗`，狀態列轉紅。
+- **同步把「資料遺失」降級為「本地快取遺失」**：即使 iOS 7 天驅逐真的清掉本地，
+  只要同步碼還在（存在 localStorage；localStorage 也可能被驅逐，故第一次同步後建議記下同步碼），
+  回前景即可從 Worker 救回。**localStorage 同樣可能被驅逐，這點要實測**。
 
 ---
 
 ## 6. 結論（PoC 層級）
 
-**成立（程式碼/架構層面已具備，預期可通過，待真機覆核）**
-- 純靜態、無後端、vanilla JS、可直接上 GitHub Pages 取得免費 HTTPS。✅
-- OPFS 主路徑 + SyncAccessHandle 全部在 Worker、主執行緒零同步 I/O。✅
-- 偵測不支援即 fallback IndexedDB，且 UI 明確標示用哪一種。✅
-- Service Worker 預快取 + cache-first，離線冷啟動的機制完整。✅
+**成立（程式碼/架構/邏輯層面已具備，預期可通過，待真機覆核）**
+- 純前端靜態 + 一個極簡 Cloudflare Worker 後端，皆免費、免信用卡起步、HTTPS。✅
+- OPFS 主路徑 + SyncAccessHandle 全部在 Worker、主執行緒零同步 I/O；不支援即 fallback IndexedDB 並標示。✅
+- Service Worker 預快取 + cache-first，離線冷啟動機制完整；跨來源同步請求網路直通不進快取。✅
 - 安裝 / standalone 所需 manifest 與 iOS meta 標籤齊備。✅
+- **vanilla union-merge 同步**：append-only + tombstone，依 id 聯集、deleted 勝出，
+  伺服器端也合併避免互蓋；**fixpoint 單元測試通過**（merge 收斂、不會多餘寫回）。✅
+- 同步在新增/刪除/開機/回前景/上線時自動觸發，離線排隊、上線補同步。✅
 
-**有風險（需真機/時間驗證）**
-- **iOS 7 天驅逐**：最大風險。短期測試會通過，長期可能掉資料。必須等 7 天實測。
-- **iOS `persist()` 很可能不授予**：不能依賴它防驅逐。
+**有風險（需真機 / 時間驗證）**
+- **iOS 7 天驅逐**：仍是最大不確定點。加了同步後「資料」不致真的遺失，但要實測 resume 是否確實觸發 pull、
+  以及 **localStorage（存同步碼）是否也被驅逐**——若同步碼掉了又沒記下來，就救不回。
+- **iOS `persist()` 很可能不授予**：不能依賴它防驅逐（所以才靠後端）。
 - **舊版 Safari 的 SyncAccessHandle 介面差異**：可能觸發 fallback（PoC 已能吸收，但要確認實際走哪條路）。
-- iOS 安裝體驗較差（無自動安裝提示，需手動「加入主畫面」），影響可用性而非技術可行性。
+- **同步碼安全性**：目前知道碼即可讀寫、KV 明文，僅適合 PoC。
+- iOS 安裝體驗較差（需手動「加入主畫面」），影響可用性而非技術可行性。
 
 **建議下一步**
-1. 真機跑完 §4 表，特別是排程一個 7 天後的 iOS 回測。
-2. 若 iOS 長期保存不可靠 → 加「匯出 / 匯入 JSON」與（未來）後端同步，把本地 storage 當快取而非真相來源。
-3. 若要正式產品化：補 SW 版本升級流程、icon 設計、錯誤回報、以及 OPFS 寫入的併發/鎖處理。
+1. 真機跑完 §4 表；特別排一個 7 天後的 iOS 回測，重點看「驅逐後同步能否救回」與「同步碼是否還在」。
+2. 把同步碼以外的「身份」做穩：第一次啟用時提示使用者抄下同步碼，或改用可記憶的帳號/權杖。
+3. 強化後端：授權（每組資料一把 token）、rate limit、KV→D1（需要更強一致性或查詢時）。
+4. 體驗：新增「匯出 / 匯入 JSON」當最後保險；同步衝突雖無（append-only），但若未來支援編輯既有記事，
+   再考慮 Yjs/Automerge 等 CRDT。
 
 ---
 
-## 附：靜態檢查
-- `node --check` 對 `app.js`、`storage-worker.js`、`sw.js` 通過（語法無誤）。
-- icons 為合法 PNG（192 / 512 / maskable-512）。
-- 仍**未**做真機行為驗證，原因見頂部誠實聲明。
+## 附：靜態檢查（這些我在本環境實際跑過）
+- `node --check` 對 `app.js`、`storage-worker.js`、`sw.js`、`worker/index.js`（ESM 模式）通過。
+- `manifest.json` 為合法 JSON。icons 為合法 PNG（192 / 512 / maskable-512）。
+- **union-merge 單元測試通過**：聯集、deleted 勝出、text 不可變、updated 取較新、排序、空/null 安全、
+  以及 **fixpoint 收斂**（合併後再合併不變動 → 同步不會造成多餘寫回）。
+- 仍**未**做真機行為驗證（無實體裝置），原因見頂部誠實聲明；標 `[ ] 待測` 的項目務必在真機覆核。

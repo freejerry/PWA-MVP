@@ -1,0 +1,48 @@
+name: Deploy PWA to GitHub Pages
+
+# 注意:對這個純靜態站,最簡單可靠的部署是 Settings → Pages → "Deploy from a branch"
+# (見 README §0),完全不需要這個工作流程。
+# 此工作流程保留給「Pages Source = GitHub Actions」的用法;預設只手動觸發,避免在
+# 尚未把 Source 切成 GitHub Actions 時每次 push 都紅燈。要用時:先在 Settings → Pages
+# 把 Source 設為 "GitHub Actions",再到 Actions 分頁手動 Run workflow(或取消下面的註解)。
+on:
+  workflow_dispatch:
+  # push:
+  #   branches: [main]
+
+# 給工作流程開啟 / 部署 Pages 的權限。
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同時只跑一個部署，新的會取代排隊中的舊的。
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # enablement:true 會在 Pages 尚未開啟時自動開啟（source 設為 GitHub Actions）。
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      # 直接上傳整個 repo 當靜態網站；前端檔案都在根目錄，相對路徑可在子路徑運作。
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
