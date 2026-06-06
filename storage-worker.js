@@ -122,12 +122,35 @@ async function init() {
 
 async function addNote(text) {
   const notes = await readAll();
-  const note = { id: Date.now() + '-' + Math.random().toString(36).slice(2, 8), text, ts: Date.now() };
+  const note = {
+    id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+    text,
+    ts: Date.now(),
+    updated: Date.now(),
+    deleted: false,
+  };
   notes.push(note);
   await writeAll(notes);
   return notes;
 }
 
+// 用 tombstone（deleted:true）標記刪除，讓刪除能跨裝置同步（union-merge 時 deleted 勝出）。
+async function deleteNote(id) {
+  const notes = await readAll();
+  for (const n of notes) {
+    if (n.id === id) { n.deleted = true; n.updated = Date.now(); }
+  }
+  await writeAll(notes);
+  return notes;
+}
+
+// 由同步流程使用：把合併後的完整陣列寫回本機（本機等同遠端的快取）。
+async function setAll(notes) {
+  await writeAll(Array.isArray(notes) ? notes : []);
+  return notes;
+}
+
+// 本機除錯用：直接清空檔案（不產生 tombstone，故不會把刪除同步出去）。
 async function clearAll() {
   await writeAll([]);
   return [];
@@ -143,6 +166,8 @@ self.onmessage = async (ev) => {
       case 'init':    result = await init(); break;
       case 'getAll':  result = await readAll(); break;
       case 'add':     result = await addNote(payload.text); break;
+      case 'delete':  result = await deleteNote(payload.id); break;
+      case 'setAll':  result = await setAll(payload.notes); break;
       case 'clear':   result = await clearAll(); break;
       default: throw new Error('未知訊息類型: ' + type);
     }

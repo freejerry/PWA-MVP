@@ -125,7 +125,7 @@
       <div class="row" style="margin-top:10px;">
         <button id="save">儲存</button>
         <button id="reload" class="secondary">從儲存重新讀取</button>
-        <button id="clear" class="secondary">清空全部</button>
+        <button id="clear" class="secondary">清空本機（不同步）</button>
       </div>
     </section>
 
@@ -149,6 +149,31 @@
         <button id="persist">請求持久化（persist）</button>
         <button id="refresh-status" class="secondary">更新狀態</button>
       </div>
+    </section>
+
+    <section class="card">
+      <h2>跨裝置同步（Cloudflare Worker + KV）</h2>
+      <p class="empty" style="margin-top:0;">
+        輸入你部署的 Worker 網址與一組「同步碼」，啟用後新增/刪除會自動 push，
+        開啟與回到前景時自動 pull。資料以同步碼分組，<strong>知道同步碼的人都能存取</strong>（PoC 等級）。
+      </p>
+      <label style="display:block;font-size:13px;color:var(--muted);margin-bottom:4px;">同步 API 網址</label>
+      <input id="sync-url" type="url" inputmode="url" autocomplete="off" autocapitalize="off"
+             placeholder="https://notes-poc-sync.你的帳號.workers.dev/notes"
+             style="width:100%;font:inherit;padding:10px;border:1px solid var(--line);border-radius:8px;margin-bottom:10px;" />
+      <label style="display:block;font-size:13px;color:var(--muted);margin-bottom:4px;">同步碼（自訂，跨裝置填一樣）</label>
+      <input id="sync-code" type="text" autocomplete="off" autocapitalize="off"
+             placeholder="例如 my-secret-room-42"
+             style="width:100%;font:inherit;padding:10px;border:1px solid var(--line);border-radius:8px;margin-bottom:10px;" />
+      <div class="row">
+        <button id="sync-toggle">啟用自動同步</button>
+        <button id="sync-now" class="secondary">立即同步</button>
+      </div>
+      <dl class="status" style="margin-top:12px;">
+        <dt>同步狀態</dt> <dd id="sync-state"><span class="pill">未啟用</span></dd>
+        <dt>伺服器 rev</dt> <dd id="sync-rev">—</dd>
+        <dt>最後同步</dt> <dd id="sync-last">—</dd>
+      </dl>
     </section>
 
     <section class="card">

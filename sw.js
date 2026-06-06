@@ -7,7 +7,7 @@
  *      （例如 https://user.github.io/repo/）。
  */
 
-const CACHE = 'notes-poc-v1';
+const CACHE = 'notes-poc-v2';
 
 // 相對於 sw.js 位置解析，確保子路徑部署也正確。
 const APP_SHELL = [
@@ -39,6 +39,12 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   const req = event.request;
+
+  // 跨來源請求（例如同步 API 打到 Cloudflare Worker）：完全不攔截，直接走網路，
+  // 避免拿到快取的舊資料、也避免快取 POST。
+  const sameOrigin = new URL(req.url).origin === self.location.origin;
+  if (!sameOrigin) return;
+
   if (req.method !== 'GET') return;
 
   // 導覽請求（開啟 app）：cache-first，離線時退回快取的 index.html。
