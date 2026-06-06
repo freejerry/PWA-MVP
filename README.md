@@ -19,6 +19,38 @@ append-only + tombstone，依 `id` 取聯集、`deleted` 勝出 → 天然無衝
 
 ---
 
+## 0. 在裝置上驗證（最短路徑）
+
+要在手機驗證需要兩個東西:**前端網址**(離線/安裝/OPFS 等大部分驗收只需要它)與
+**同步後端網址**(只有跨裝置同步需要)。
+
+### A. 前端 — 已自動部署(零設定)
+本 repo 內含 GitHub Actions(`.github/workflows/deploy-pages.yml`),push 後會自動把網站部署到
+**GitHub Pages** 並開啟 Pages,跑完即得一個 HTTPS 網址:
+
+```
+https://<你的帳號>.github.io/<repo 名>/
+```
+
+> 查網址:GitHub repo → **Actions** 分頁看 "Deploy PWA to GitHub Pages" 跑完,
+> 或 **Settings → Pages** 上方顯示的網址。第一次若因權限沒自動開,到
+> **Settings → Pages → Source** 選 **GitHub Actions** 再重跑一次工作流程即可。
+
+拿到網址後,**只用前端**就能驗收:安裝/standalone、離線冷啟動、OPFS 持久化、persist()/estimate()。
+這些不需要後端。
+
+### B. 同步後端 — 需要你的 Cloudflare 帳號(我無法代為部署)
+跨裝置同步那一項才需要。最快方式:
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/freejerry/pwa-mvp/tree/main/worker)
+
+或用指令(見 §3.1b)。部署完把得到的 `https://….workers.dev/notes` 填進前端「跨裝置同步」面板即可。
+
+> 為什麼後端不能自動好?Cloudflare Worker 需要你的帳號授權(`wrangler login` / 一鍵按鈕的 OAuth),
+> 這是必要的人工步驟,無法在這個環境替你完成。前端則完全自動。
+
+---
+
 ## 1. 檔案結構
 
 ```
@@ -36,6 +68,8 @@ append-only + tombstone，依 `id` 取聯集、`deleted` 勝出 → 天然無衝
 ├── worker/             # 同步後端（Cloudflare Worker，與前端分開部署）
 │   ├── index.js        # GET/POST /notes，伺服器端 union-merge，KV 儲存，CORS
 │   └── wrangler.toml   # Worker 設定 + KV namespace 綁定
+├── .github/workflows/
+│   └── deploy-pages.yml # push 後自動部署前端到 GitHub Pages（取得可在手機開的 HTTPS 網址）
 └── README.md
 ```
 

@@ -1,0 +1,47 @@
+name: Deploy PWA to GitHub Pages
+
+# 推到下列分支（或手動觸發）時，自動把整個靜態網站部署到 GitHub Pages。
+# 這讓你 push 後就有一個可直接在手機 Safari/Chrome 打開的 HTTPS 網址，免本機設定。
+on:
+  push:
+    branches:
+      - main
+      - claude/pwa-offline-persistence-poc-zo10I
+  workflow_dispatch:
+
+# 給工作流程開啟 / 部署 Pages 的權限。
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同時只跑一個部署，新的會取代排隊中的舊的。
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # enablement:true 會在 Pages 尚未開啟時自動開啟（source 設為 GitHub Actions）。
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      # 直接上傳整個 repo 當靜態網站；前端檔案都在根目錄，相對路徑可在子路徑運作。
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
