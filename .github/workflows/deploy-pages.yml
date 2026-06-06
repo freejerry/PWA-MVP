@@ -1,13 +1,14 @@
 name: Deploy PWA to GitHub Pages
 
-# 推到下列分支（或手動觸發）時，自動把整個靜態網站部署到 GitHub Pages。
-# 這讓你 push 後就有一個可直接在手機 Safari/Chrome 打開的 HTTPS 網址，免本機設定。
+# 注意:對這個純靜態站,最簡單可靠的部署是 Settings → Pages → "Deploy from a branch"
+# (見 README §0),完全不需要這個工作流程。
+# 此工作流程保留給「Pages Source = GitHub Actions」的用法;預設只手動觸發,避免在
+# 尚未把 Source 切成 GitHub Actions 時每次 push 都紅燈。要用時:先在 Settings → Pages
+# 把 Source 設為 "GitHub Actions",再到 Actions 分頁手動 Run workflow(或取消下面的註解)。
 on:
-  push:
-    branches:
-      - main
-      - claude/pwa-offline-persistence-poc-zo10I
   workflow_dispatch:
+  # push:
+  #   branches: [main]
 
 # 給工作流程開啟 / 部署 Pages 的權限。
 permissions:

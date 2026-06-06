@@ -24,21 +24,24 @@ append-only + tombstone，依 `id` 取聯集、`deleted` 勝出 → 天然無衝
 要在手機驗證需要兩個東西:**前端網址**(離線/安裝/OPFS 等大部分驗收只需要它)與
 **同步後端網址**(只有跨裝置同步需要)。
 
-### A. 前端 — 一次性開啟 Pages,之後每次 push 自動部署
-本 repo 內含 GitHub Actions(`.github/workflows/deploy-pages.yml`),會自動 build & deploy。
-但 **GitHub Pages 第一次必須由你手動開啟**(預設的 workflow token 沒有權限替你建立 Pages 站台,
-這是 GitHub 的限制,我無法代做):
+### A. 前端 — 開啟 GitHub Pages(一次性,~30 秒)
+GitHub Pages 必須由你在設定頁開一次(這是帳號層級動作,API token 無權代開)。
+對這個純靜態站,**最簡單可靠**的是「從分支部署」,完全不需要 GitHub Actions:
 
 1. GitHub repo → **Settings → Pages**。
-2. **Build and deployment → Source** 選 **GitHub Actions**。
-3. 回到 **Actions** 分頁 → 左側 "Deploy PWA to GitHub Pages" → 右上 **Run workflow**(或隨便再 push 一次)。
-4. 跑完後,網址在該次 run 的 `deploy` job 摘要、或 **Settings → Pages** 頂端:
+2. **Build and deployment → Source** 選 **Deploy from a branch**。
+3. **Branch** 選 `claude/pwa-offline-persistence-poc-zo10I`(要驗含同步的版本)或合併後選 `main`;
+   資料夾選 **`/ (root)`** → **Save**。
+4. 等約 1 分鐘,網址在 **Settings → Pages** 頂端出現:
    ```
-   https://<你的帳號>.github.io/<repo 名>/
+   https://<你的帳號>.github.io/<repo 名>/        例:https://freejerry.github.io/PWA-MVP/
    ```
 
-> 開啟前工作流程會以 `Create Pages site failed: Resource not accessible by integration` 失敗 —— 這是預期的,
-> 開啟 Source=GitHub Actions 後重跑就會綠燈。之後每次 push 到 `main` 或本功能分支都會自動重新部署。
+> repo 內已放 `.nojekyll`,確保檔案原樣 serve(不經 Jekyll 處理)。
+>
+> **替代方案(GitHub Actions 部署)**:若你偏好 Source = **GitHub Actions**,先在 Settings → Pages 把
+> Source 設為 GitHub Actions,再到 **Actions** 分頁手動跑 "Deploy PWA to GitHub Pages"
+> (該工作流程預設只手動觸發,避免未設定前一直紅燈)。兩種擇一即可。
 
 拿到網址後,**只用前端**就能驗收:安裝/standalone、離線冷啟動、OPFS 持久化、persist()/estimate()。
 這些不需要後端。
