@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>離線記事 PoC</title>
+
+  <!-- PWA / 安裝 -->
+  <link rel="manifest" href="./manifest.json" />
+  <meta name="theme-color" content="#0b6e4f" />
+
+  <!-- iOS Safari「加入主畫面」standalone 相關標籤 -->
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="離線記事" />
+  <link rel="apple-touch-icon" href="./icons/icon-192.png" />
+
+  <style>
+    :root {
+      --bg: #0b6e4f;
+      --bg2: #095c41;
+      --card: #ffffff;
+      --ink: #14271f;
+      --muted: #5d6f67;
+      --line: #e2e9e5;
+      --ok: #1b7f3b;
+      --warn: #b06a00;
+      --bad: #b3261e;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; }
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans TC", sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      min-height: 100vh;
+      padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    }
+    header {
+      color: #eafaf2;
+      padding: 16px 16px 8px;
+      max-width: 720px;
+      margin: 0 auto;
+    }
+    header h1 { font-size: 20px; margin: 0 0 4px; }
+    header p { margin: 0; font-size: 13px; opacity: .85; }
+    main {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 8px 12px 40px;
+    }
+    .card {
+      background: var(--card);
+      border-radius: 12px;
+      padding: 14px;
+      margin: 10px 0;
+      box-shadow: 0 2px 8px rgba(0,0,0,.18);
+    }
+    .card h2 { font-size: 14px; margin: 0 0 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+    textarea {
+      width: 100%;
+      min-height: 72px;
+      resize: vertical;
+      font: inherit;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    button {
+      font: inherit;
+      font-weight: 600;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 14px;
+      background: var(--bg);
+      color: #fff;
+      cursor: pointer;
+    }
+    button.secondary { background: #eef2f0; color: var(--ink); border: 1px solid var(--line); }
+    button:active { transform: translateY(1px); }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+
+    ul#notes { list-style: none; margin: 0; padding: 0; }
+    ul#notes li {
+      border-bottom: 1px solid var(--line);
+      padding: 10px 0;
+    }
+    ul#notes li:last-child { border-bottom: none; }
+    .note-text { white-space: pre-wrap; word-break: break-word; }
+    .note-meta { font-size: 12px; color: var(--muted); margin-top: 4px; }
+    .empty { color: var(--muted); font-size: 14px; }
+
+    dl.status { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; font-size: 14px; }
+    dl.status dt { color: var(--muted); }
+    dl.status dd { margin: 0; word-break: break-word; }
+    .pill {
+      display: inline-block; font-size: 12px; font-weight: 700;
+      padding: 2px 8px; border-radius: 999px; background: #eef2f0;
+    }
+    .pill.opfs { background: #dcf2e4; color: var(--ok); }
+    .pill.idb  { background: #fdeccf; color: var(--warn); }
+    .pill.ok   { background: #dcf2e4; color: var(--ok); }
+    .pill.no   { background: #fbe0de; color: var(--bad); }
+
+    #log {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px; white-space: pre-wrap; word-break: break-word;
+      background: #0f1c17; color: #c8e6d6; border-radius: 8px; padding: 10px;
+      max-height: 160px; overflow: auto; margin: 0;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>離線記事 <span id="net-badge" class="pill">—</span></h1>
+    <p>PWA 離線持久化 PoC — OPFS + SyncAccessHandle，不支援時 fallback 到 IndexedDB。</p>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>新增記事</h2>
+      <textarea id="input" placeholder="輸入記事內容，按「儲存」新增一筆…"></textarea>
+      <div class="row" style="margin-top:10px;">
+        <button id="save">儲存</button>
+        <button id="reload" class="secondary">從儲存重新讀取</button>
+        <button id="clear" class="secondary">清空全部</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>記事列表（<span id="count">0</span>）</h2>
+      <ul id="notes"></ul>
+      <p id="notes-empty" class="empty">尚無記事。新增一筆後關閉 App 再重開，應仍在。</p>
+    </section>
+
+    <section class="card">
+      <h2>儲存 / 持久化狀態</h2>
+      <dl class="status">
+        <dt>儲存後端</dt>          <dd id="backend"><span class="pill">偵測中…</span></dd>
+        <dt>SyncAccessHandle</dt> <dd id="sah">偵測中…</dd>
+        <dt>estimate usage</dt>   <dd id="usage">—</dd>
+        <dt>estimate quota</dt>   <dd id="quota">—</dd>
+        <dt>persisted()</dt>      <dd id="persisted"><span class="pill">—</span></dd>
+        <dt>persist() 結果</dt>   <dd id="persist-result">尚未請求</dd>
+      </dl>
+      <div class="row" style="margin-top:12px;">
+        <button id="persist">請求持久化（persist）</button>
+        <button id="refresh-status" class="secondary">更新狀態</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>事件記錄</h2>
+      <pre id="log"></pre>
+    </section>
+  </main>
+
+  <script src="./app.js"></script>
+</body>
+</html>
